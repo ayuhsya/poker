@@ -15,9 +15,15 @@ function PokerHand(handCfg, eventHandler) {
 }
 
 PokerHand.prototype.resetAndStartNextRound = function () {
-    this.actionOn = this.firstToAct;
-    this.eventHandler.emit(PokerHelper.HandStages[++this.stage], this.stage);
+    ++this.stage;
+    this.actionOn = (this.stage === 0) ? PokerHelper.toPlayerIndex(this.firstToAct + 2, this.totalPlayersInHand.length) : this.firstToAct;
     this.playerActionsRegistered = (this.stage === 0) ? 2 : 0; // sb + bb = 2 actions
+    if (!this.playerStates[this.totalPlayersInHand[this.actionOn]].eligibleForNextRound || this.playerStates[this.totalPlayersInHand[this.actionOn]].hasQuitHand) {
+        this.playerActionsRegistered++;
+        this.determineNextState();
+        return;
+    }
+    this.eventHandler.emit(PokerHelper.HandStages[this.stage], this.stage);
 }
 
 PokerHand.prototype.notifyForNextAction = function () {
@@ -53,14 +59,34 @@ PokerHand.prototype.validateAction = function (actionCfg) {
     return true;
 }
 
-
 PokerHand.prototype.reconfigurePot = function (actingPlayerId, value) {
     this.potConfig.totalPotValue += value;
     if (this.playerStates[actingPlayerId].chipsInPot >= this.playerStates[actingPlayerId].chips) { // Should never be >
         // all in
+        let currentActivePlayersInRound = 0;
+        for (key in this.playerStates) {
+            // checking eligible for next round in case player has already went all in in previous rounds (multiple side pots case)
+            if (this.playerStates.hasOwnProperty(key) && !this.playerStates[key].hasQuitHand && this.playerStates[key].eligibleForNextRound) {
+                currentActivePlayersInRound++;
+            }
+        }
         this.playerStates[actingPlayerId].eligibleForNextRound = false;
-        this.potConfig.potShares[actingPlayerId] = this.playerStates[actingPlayerId].chipsInPot;
+        this.potConfig.potShares[actingPlayerId] = {
+            share: this.playerStates[actingPlayerId].chips,
+            totalPlayersInThisShare: currentActivePlayersInRound
+        }
         // todo notify all in event
+    }
+}
+
+PokerHand.prototype.determineNextState = function () {
+    if (this.isHandOver()) {
+        this.eventHandler.emit('HAND_OVER');
+    } else if (this.isRoundOver()) {
+        logger.log('verbose', '[ %s ] round is over, starting next round', PokerHelper.HandStages[this.stage]);
+        this.resetAndStartNextRound();
+    } else {
+        this.notifyForNextAction();
     }
 }
 
@@ -81,21 +107,13 @@ PokerHand.prototype.act = function (actionCfg) {
         case 'CHECK':
             break;
     }
-    // todo update pot state
     this.playerActionsRegistered++;
     this.logActionHistory(actionCfg);
-
+    this.determineNextState();
     logger.log('debug', 'Current hand state [ %s ]', JSON.stringify(this));
-    if (this.isHandOver()) {
-        this.eventHandler.emit('HAND_OVER');
-    } else if (this.isRoundOver()) {
-        logger.log('verbose', '[ %s ] round is over, starting next round', PokerHelper.HandStages[this.stage]);
-        this.resetAndStartNextRound();
-    } else {
-        this.notifyForNextAction();
-    }
 }
 
+// todo: fix logic of round end preflop: should end when non bb calls bb's raise, currently bb has to check again
 PokerHand.prototype.isRoundOver = function () {
     let allChipsInPot = []
     if (this.playerActionsRegistered < this.totalPlayersInHand.length) return false;
@@ -109,7 +127,6 @@ PokerHand.prototype.isRoundOver = function () {
     }
 
     logger.log('debug', 'Total actions [ %s ], Total players [ %s ], Chip stats [ %s ]', this.playerActionsRegistered, this.totalPlayersInHand.length, JSON.stringify(allChipsInPot))
-    // todo modify for side pots / all ins
     for (let index = 1; index < allChipsInPot.length; index++) {
         if (allChipsInPot[index - 1].chipValue != allChipsInPot[index].chipValue && // if all players (still in hand) have not matched the pot
             !(this.potConfig.potShares.hasOwnProperty(allChipsInPot[index].playerId) ||
@@ -131,7 +148,7 @@ PokerHand.prototype.isHandOver = function () {
             playerCountForNextRound++;
         }
     }
-    return this.isRoundOver() && (this.stage >= 3 || playerCountForNextRound < 2);
+    return playerCountForNextRound < 2 || (this.stage >= 3 && this.isRoundOver());
 }
 
 module.exports = {

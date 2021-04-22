@@ -70,11 +70,17 @@ function processCommand(payload) {
 }
 
 var commands = [
-    '!createtable -maxPlayers=2 -sb=10 -bb=20',
+    '!createtable -maxPlayers=6 -sb=25 -bb=50',
     '!join -id=player1',
     '!join -id=player2',
-    '!buy -playerId=player1 -chips=1000',
-    '!buy -playerId=player2 -chips=1000',
+    '!join -id=player3',
+    '!join -id=player4',
+    '!join -id=player5',
+    '!buy -playerId=player1 -chips=50',
+    '!buy -playerId=player2 -chips=100',
+    '!buy -playerId=player3 -chips=150',
+    '!buy -playerId=player4 -chips=1000',
+    '!buy -playerId=player5 -chips=2000',
     '!start'
 ]
 

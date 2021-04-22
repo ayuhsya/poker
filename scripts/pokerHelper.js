@@ -62,17 +62,10 @@ module.exports = {
 
     scorePlayerHands: function (playersInHand, playerStates, communityCards) {
         var scores = {}
-        if (playersInHand.length < 2) {
-            scores[playersInHand[0]] = {
-                value: 1000
-            }
-        } else {
-            for (player of playersInHand) {
-                let cardSet = createCardSetForPlayer(player, playerStates, communityCards);
-                scores[player] = PokerScore.score(cardSet);
-            }
+        for (player of playersInHand) {
+            let cardSet = createCardSetForPlayer(player, playerStates, communityCards);
+            scores[player] = PokerScore.score(cardSet);
         }
-
         return scores;
     },
 

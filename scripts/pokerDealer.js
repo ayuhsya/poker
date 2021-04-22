@@ -18,8 +18,9 @@ PokerDealer.prototype.buyChips = function (buyCfg) {
 }
 
 PokerDealer.prototype.doNext = function () {
-    this.table.performHouseKeeping();
-    this.table.dealNextHand();
+    if (this.table.performHouseKeeping()) {
+        this.table.dealNextHand();
+    }
 }
 
 PokerDealer.prototype.notifyPlayerForAction = function (playerOnAction) {
@@ -28,6 +29,11 @@ PokerDealer.prototype.notifyPlayerForAction = function (playerOnAction) {
 
 PokerDealer.prototype.notifyError = function (message) {
     logger.log('error', '[ %s ]', message)
+}
+
+PokerDealer.prototype.notifyGameStopped = function (message) {
+    logger.log('error', 'Game has been stopped at hand', message)
+    this.displayTable();
 }
 
 PokerDealer.prototype.notifyChipsCounts = function (message) {
@@ -50,8 +56,10 @@ PokerDealer.prototype.displayTable = function (stage) {
                 PokerHelper.toHumarReadableCard(cards[1]), PokerHelper.toHumarReadableCard(cards[2]), PokerHelper.toHumarReadableCard(cards[3]),
                 PokerHelper.toHumarReadableCard(cards[4]))
             break;
+        case 0:
+            logger.log('verbose', '[ %s ]: []', PokerHelper.HandStages[stage]);
+            break;
         default:
-            logger.log('verbose', '[ %s ]: []', PokerHelper.HandStages[stage])
             break;
     }
     for (let key in this.table.currentHand.playerStates) {
@@ -77,6 +85,7 @@ PokerDealer.prototype.registerEventHandlers = function () {
     this.eventHandler.on('ACTION_ON', ev => this.notifyPlayerForAction(ev));
     this.eventHandler.on('INVALID_ACTION', ev => this.notifyError(ev));
     this.eventHandler.on('CHIP_COUNT_CHANGED', ev => this.notifyChipsCounts(ev));
+    this.eventHandler.on('GAME_STOPPED', ev => this.notifyGameStopped(ev));
     this.eventHandler.on(PokerHelper.HandStages[0], ev => this.displayTable(ev));
     this.eventHandler.on(PokerHelper.HandStages[1], ev => this.displayTable(ev));
     this.eventHandler.on(PokerHelper.HandStages[2], ev => this.displayTable(ev));
