@@ -29,12 +29,12 @@ PokerTable.prototype.joinTable = function (player) {
         isActive: true,
         hand: []
     }
-    logger.log('debug', '%s joined', player.id);
+    logger.log('debug', '[ %s ] joined table', player.id);
 }
 
 PokerTable.prototype.buyChips = function (buyCfg) {
     this.players[buyCfg.playerId].chips = this.players[buyCfg.playerId].chips + parseFloat(buyCfg.chips);
-    logger.log('debug', '%s bought %s chips', buyCfg.playerId, buyCfg.chips);
+    logger.log('debug', '[ %s ] bought [ %s ] chips', buyCfg.playerId, buyCfg.chips);
 }
 
 PokerTable.prototype.dealNextHand = function () {
@@ -76,7 +76,8 @@ PokerTable.prototype.dealNextHand = function () {
         totalPlayersInHand: this.activePlayersInOrder
     }, this.eventHandler);
 
-    logger.log('verbose', 'Starting hand [ # %s ]', this.totalHandsDealt);
+    logger.log('verbose', 'Starting hand [ #%s ]', this.totalHandsDealt);
+    logger.log('debug', 'Hand [ %s ] initial state [ #%s ]', this.totalHandsDealt, JSON.stringify(this.currentHand));
     this.currentHand.resetAndStartNextRound();
 }
 
@@ -96,6 +97,7 @@ PokerTable.prototype.performHouseKeeping = function () {
 
         // Re-Distribute chips post hand.
         let playerHandScores = PokerHelper.scorePlayerHands(playersInFinalRound, playerStatesAfterHand, this.currentHand.communityCards);
+        logger.log('debug', 'Scoring results [ %s ]', JSON.stringify(playerHandScores))
         var playersByRank = [...playersInFinalRound].sort((a, b) => {
             return playerHandScores[a].value > playerHandScores[b].value ? -1 : playerHandScores[a].value < playerHandScores[b].value ? 1 : 0;
         })
@@ -103,6 +105,7 @@ PokerTable.prototype.performHouseKeeping = function () {
         if (this.currentHand.potConfig.potShares.size === 0) {
             let winningPlayer = playersByRank[0];
             this.players[winningPlayer].chips += this.currentHand.totalPotValue;
+            logger.log('debug', '[ %s ] won full pot [ %s ]', winningPlayer, this.currentHand.totalPotValue)
             this.eventHandler.emit('CHIP_COUNT_CHANGED', {
                 delta: this.currentHand.totalPotValue,
                 playerId: winningPlayer
@@ -114,12 +117,14 @@ PokerTable.prototype.performHouseKeeping = function () {
                     let playerWinnings = this.currentHand.potConfig.potShares[player];
                     this.players[player].chips += playerWinnings;
                     totalPotValue -= playerWinnings;
+                    logger.log('debug', '[ %s ] won pot of size [ %s ]', player, playerWinnings)
                     this.eventHandler.emit('CHIP_COUNT_CHANGED', {
                         delta: playerWinnings,
                         playerId: player
                     });
                 } else if (totalPotValue > 0) {
                     this.players[player].chips += totalPotValue;
+                    logger.log('debug', '[ %s ] won pot of size [ %s ]', player, totalPotValue)
                     this.eventHandler.emit('CHIP_COUNT_CHANGED', {
                         delta: totalPotValue,
                         playerId: player
@@ -127,6 +132,7 @@ PokerTable.prototype.performHouseKeeping = function () {
                     totalPotValue = 0;
                 } else {
                     this.players[player].chips -= this.currentHand.playerStates[player].chipsInPot;
+                    logger.log('debug', '[ %s ] lost [ %s ] chips', player, this.currentHand.playerStates[player].chipsInPot)
                     this.eventHandler.emit('CHIP_COUNT_CHANGED', {
                         delta: -1 * this.currentHand.playerStates[player].chipsInPot,
                         playerId: player
@@ -140,10 +146,11 @@ PokerTable.prototype.performHouseKeeping = function () {
     this.currentHand = undefined;
     this.activePlayersInOrder = [];
     for (var playerId of this.playersInOrder) {
-        if (PokerHelper.isPlayerEligibleForNextHand(this.players[playerId]))
+        if (this.players[playerId].chips >= this.bb && this.players[playerId].isActive) {
             this.activePlayersInOrder.push(playerId);
+        }
     }
-    logger.log('debug', 'performed house keeping', this.table)
+    logger.log('debug', 'Performed house keeping, table state [ %s ]', JSON.stringify(this.table))
 }
 
 

@@ -172,7 +172,7 @@ module.exports = {
     score: function (...allCards) {
         // return the best poker hand from a set or sets of cards
         let cards = _sanitise(allCards);
-        loggerFactory.log('debug', 'Sanitised Cards [ %s ]', JSON.stringify(cards));
+        loggerFactory.log('debug', 'All cards set [ %s ]', JSON.stringify(cards));
 
         // start empty
         let best = _result(cards);

@@ -68,7 +68,7 @@ PokerHand.prototype.act = function (actionCfg) {
     let actingPlayerId = actionCfg.playerId;
     let action = actionCfg.action;
     let value = parseFloat(actionCfg.value);
-    logger.log('verbose', '[ %s ]: [ %s ] [ %s ]', actingPlayerId, action, value);
+    logger.log('verbose', 'Action [ %s ]: [ %s ] [ %s ]', actingPlayerId, action, value);
     switch (action) {
         case 'BET':
             this.playerStates[actingPlayerId].chipsInPot += value;
