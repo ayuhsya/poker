@@ -1,3 +1,5 @@
+const loggerFactory = require("./loggerFactory").getLogger();
+
 // https://www.kequc.com/2016/07/31/how-to-score-a-poker-hand-in-javascript#:~:text=As%20long%20as%20there%20is,best%20hand%20of%20five%20cards.
 
 // ranks in order
@@ -23,32 +25,36 @@ function _sanitise(allCards) {
     return cards;
 }
 
-function _combinations(cards, groups) {
-    // card combinations with the given size
-    let result = [];
-
-    // not enough cards
-    if (groups > cards.length)
-        return result;
-
-    // one group
-    if (groups == cards.length)
-        return [cards];
-
-    // one card in each group
-    if (groups == 1)
-        return cards.map((card) => [card]);
-
-    // everything else
-    for (let i = 0; i < cards.length - groups; i++) {
-        let head = cards.slice(i, (i + 1));
-        let tails = _combinations(cards.slice(i + 1), (groups - 1));
-        for (let tail of tails) {
-            result.push(head.concat(tail));
-        }
+function _combinationPascalIdentity(arr, n, r, index, data, i, allCombinations) {
+    // Current combination is ready
+    // to be printed, print it
+    if (index == r) {
+        let dataCopy = [...data]
+        allCombinations.push(dataCopy);
+        return;
     }
 
-    return result;
+    // When no more elements are there
+    // to put in data[]
+    if (i >= n) {
+        return;
+    }
+
+    // current is included, put
+    // next at next location
+    data[index] = arr[i];
+    _combinationPascalIdentity(arr, n, r, index + 1, data, i + 1, allCombinations);
+
+    // current is excluded, replace
+    // it with next (Note that
+    // i+1 is passed, but index is not changed)
+    _combinationPascalIdentity(arr, n, r, index, data, i + 1, allCombinations);
+}
+
+function _combinations(cards, groups) {
+    let allCombinations = [], data = [];
+    _combinationPascalIdentity(cards, cards.length, groups, 0, data, 0, allCombinations)
+    return allCombinations;
 }
 
 function _ranked(cards) {
@@ -160,13 +166,13 @@ function _calculate(cards) {
 
     else
         return _result(cards, 'high card', _value(ranked, 0));
-
 }
 
 module.exports = {
     score: function (...allCards) {
         // return the best poker hand from a set or sets of cards
         let cards = _sanitise(allCards);
+        loggerFactory.log('debug', 'Sanitised Cards [ %s ]', JSON.stringify(cards));
 
         // start empty
         let best = _result(cards);
@@ -175,6 +181,7 @@ module.exports = {
         for (let combination of _combinations(cards, 5)) {
             // calculate value of 5 cards
             let result = _calculate(combination);
+            loggerFactory.log('debug', 'Evaluation result [ %s ]', JSON.stringify(result));
             if (result.value > best.value)
                 best = result;
         }

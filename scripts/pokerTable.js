@@ -59,8 +59,6 @@ PokerTable.prototype.dealNextHand = function () {
         cardIndex = burns + ++cardIndex;
         communityCards.push(deck[cardIndex])
     }
-    // Populate pot
-    var pot = this.sb + this.bb;
     // Populate chips
     for (let idx = 0; idx < totalPlayersInHand; idx++) {
         var playerId = this.activePlayersInOrder[PokerHelper.toPlayerIndex(idx + firstToAct, totalPlayersInHand)];
@@ -73,9 +71,9 @@ PokerTable.prototype.dealNextHand = function () {
     this.currentHand = PokerHand.createPokerHand({
         playerInitialStates: playerDetails,
         communityCards: communityCards,
-        pot: pot,
+        potConfig: { totalPotValue: this.sb + this.bb, potShares: {} },
         actionOn: firstToAct,
-        totalPlayersInHand: totalPlayersInHand
+        totalPlayersInHand: this.activePlayersInOrder
     }, this.eventHandler);
 
     logger.log('verbose', 'Starting hand [ # %s ]', this.totalHandsDealt);
@@ -96,17 +94,43 @@ PokerTable.prototype.performHouseKeeping = function () {
             }
         }
 
-        if (playersInFinalRound.length == 1) {
-            this.players[playersInFinalRound[0]].chips += this.currentHand.pot;
-        } else if (playersInFinalRound.length > 1) {
-            // TODO: add main pot/side pot logic
-            // TODO: add show down logic
-            let winningHandResult = PokerHelper.determineWinningHand(playersInFinalRound, playerStatesAfterHand);
-            this.players[winningHandResult.playerId].chips += this.currentHand.pot;
-            
-            for (playerId of playersInFinalRound) {
-                if (playerId != winningHandResult.playerId) {
-                    this.players[playerId].chips -= playerStatesAfterHand[playerId].chipsInPot;
+        // Re-Distribute chips post hand.
+        let playerHandScores = PokerHelper.scorePlayerHands(playersInFinalRound, playerStatesAfterHand, this.currentHand.communityCards);
+        var playersByRank = [...playersInFinalRound].sort((a, b) => {
+            return playerHandScores[a].value > playerHandScores[b].value ? -1 : playerHandScores[a].value < playerHandScores[b].value ? 1 : 0;
+        })
+
+        if (this.currentHand.potConfig.potShares.size === 0) {
+            let winningPlayer = playersByRank[0];
+            this.players[winningPlayer].chips += this.currentHand.totalPotValue;
+            this.eventHandler.emit('CHIP_COUNT_CHANGED', {
+                delta: this.currentHand.totalPotValue,
+                playerId: winningPlayer
+            });
+        } else {
+            let totalPotValue = this.currentHand.potConfig.totalPotValue;
+            for (player of playersByRank) {
+                if (this.currentHand.potConfig.potShares.hasOwnProperty(player)) {
+                    let playerWinnings = this.currentHand.potConfig.potShares[player];
+                    this.players[player].chips += playerWinnings;
+                    totalPotValue -= playerWinnings;
+                    this.eventHandler.emit('CHIP_COUNT_CHANGED', {
+                        delta: playerWinnings,
+                        playerId: player
+                    });
+                } else if (totalPotValue > 0) {
+                    this.players[player].chips += totalPotValue;
+                    this.eventHandler.emit('CHIP_COUNT_CHANGED', {
+                        delta: totalPotValue,
+                        playerId: player
+                    });
+                    totalPotValue = 0;
+                } else {
+                    this.players[player].chips -= this.currentHand.playerStates[player].chipsInPot;
+                    this.eventHandler.emit('CHIP_COUNT_CHANGED', {
+                        delta: -1 * this.currentHand.playerStates[player].chipsInPot,
+                        playerId: player
+                    });
                 }
             }
         }

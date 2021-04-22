@@ -5,7 +5,7 @@ const logger = require('./loggerFactory').getLogger();
 function PokerHand(handCfg, eventHandler) {
     this.playerStates = handCfg.playerInitialStates;
     this.communityCards = handCfg.communityCards;
-    this.pot = handCfg.pot;
+    this.potConfig = handCfg.potConfig;
     this.firstToAct = handCfg.actionOn;
     this.actionOn = undefined;
     this.totalPlayersInHand = handCfg.totalPlayersInHand;
@@ -21,24 +21,58 @@ PokerHand.prototype.resetAndStartNextRound = function () {
 }
 
 PokerHand.prototype.notifyForNextAction = function () {
-    this.actionOn = PokerHelper.toPlayerIndex(this.actionOn + 1, this.totalPlayersInHand);
+    this.actionOn = PokerHelper.toPlayerIndex(this.actionOn + 1, this.totalPlayersInHand.length);
     this.eventHandler.emit('ACTION_ON', this.actionOn)
 }
 
 PokerHand.prototype.logActionHistory = function (actionCfg) {
-    
+
 }
 
-PokerHand.prototype.act = function (actionCfg) {
+PokerHand.prototype.validateAction = function (actionCfg) {
     var actingPlayerId = actionCfg.playerId;
     var action = actionCfg.action;
     var value = parseFloat(actionCfg.value);
+
+    // Safety check
+    if (this.totalPlayersInHand[this.actionOn] != actingPlayerId) {
+        this.eventHandler.emit('INVALID_ACTION', `[ ${actingPlayerId} ] cannot act yet.`)
+        return false;
+    }
+
+    switch (action) {
+        case 'BET':
+            if (this.playerStates[actingPlayerId].chipsInPot + value > this.playerStates[actingPlayerId].chips) {
+                this.eventHandler.emit('INVALID_ACTION', `[ ${actingPlayerId} ] does not have enough chips to perform this [ ${action} ] [ ${value} ].`)
+                return false;
+            }
+            break;
+        default:
+            break;
+    }
+    return true;
+}
+
+
+PokerHand.prototype.reconfigurePot = function (actingPlayerId, value) {
+    this.potConfig.totalPotValue += value;
+    if (this.playerStates[actingPlayerId].chipsInPot >= this.playerStates[actingPlayerId].chips) { // Should never be >
+        // all in
+        this.playerStates[actingPlayerId].eligibleForNextRound = false;
+        this.potConfig.potShares[actingPlayerId] = this.playerStates[actingPlayerId].chipsInPot;
+        // todo notify all in event
+    }
+}
+
+PokerHand.prototype.act = function (actionCfg) {
+    let actingPlayerId = actionCfg.playerId;
+    let action = actionCfg.action;
+    let value = parseFloat(actionCfg.value);
     logger.log('verbose', '[ %s ]: [ %s ] [ %s ]', actingPlayerId, action, value);
     switch (action) {
         case 'BET':
-        case 'CALL':
             this.playerStates[actingPlayerId].chipsInPot += value;
-            this.pot += value;
+            this.reconfigurePot(actingPlayerId, value);
             break;
         case 'FOLD':
             this.playerStates[actingPlayerId].eligibleForNextRound = false;
@@ -47,10 +81,11 @@ PokerHand.prototype.act = function (actionCfg) {
         case 'CHECK':
             break;
     }
+    // todo update pot state
     this.playerActionsRegistered++;
     this.logActionHistory(actionCfg);
 
-    logger.log('debug', 'current hand state [ %s ]', JSON.stringify(this));
+    logger.log('debug', 'Current hand state [ %s ]', JSON.stringify(this));
     if (this.isHandOver()) {
         this.eventHandler.emit('HAND_OVER');
     } else if (this.isRoundOver()) {
@@ -62,18 +97,29 @@ PokerHand.prototype.act = function (actionCfg) {
 }
 
 PokerHand.prototype.isRoundOver = function () {
-    var allChipsInPot = []
-    if (this.playerActionsRegistered < this.totalPlayersInHand) return false;
+    let allChipsInPot = []
+    if (this.playerActionsRegistered < this.totalPlayersInHand.length) return false;
     for (let key in this.playerStates) {
         if (this.playerStates.hasOwnProperty(key) && !this.playerStates[key].hasQuitHand) {
-            allChipsInPot.push(this.playerStates[key].chipsInPot);
+            allChipsInPot.push({
+                chipValue: this.playerStates[key].chipsInPot,
+                playerId: key
+            });
         }
     }
+
+    logger.log('debug', 'Total actions [ %s ], Total players [ %s ], Chip stats [ %s ]', this.playerActionsRegistered, this.totalPlayersInHand.length, JSON.stringify(allChipsInPot))
+    // todo modify for side pots / all ins
     for (let index = 1; index < allChipsInPot.length; index++) {
-        if (allChipsInPot[index - 1] != allChipsInPot[index]) return false;
+        if (allChipsInPot[index - 1].chipValue != allChipsInPot[index].chipValue && // if all players (still in hand) have not matched the pot
+            !(this.potConfig.potShares.hasOwnProperty(allChipsInPot[index].playerId) ||
+                this.potConfig.potShares.hasOwnProperty(allChipsInPot[index - 1].playerId))) { // or if not matched, either of them is not all in
+            // then round is not yet over.
+            return false;
+        }
     }
     // Pre flop last to act is big blind.
-    if (this.stage === 0 && this.actionOn != PokerHelper.toPlayerIndex(this.firstToAct + 1, this.totalPlayersInHand)) return false;
+    if (this.stage === 0 && this.actionOn != PokerHelper.toPlayerIndex(this.firstToAct + 1, this.totalPlayersInHand.length)) return false;
 
     return true;
 }

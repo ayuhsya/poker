@@ -1,4 +1,17 @@
-const pokerScore = require("./pokerScore");
+const PokerScore = require("./pokerScore");
+
+var DeckContants = {
+    suites: ['♠️', '♥️', '♣️', '♦️'],
+    cardValues: ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K']
+}
+
+function getCardSuit(cardIndex) {
+    return DeckContants.suites[parseInt(cardIndex / 13)];
+}
+
+function getCardRank(cardIndex) {
+    return DeckContants.cardValues[parseInt(cardIndex % 13)];
+}
 
 function riffleShuffle(deck) {
     const cutDeckVariant = deck.length / 2 + Math.floor(Math.random() * 9) - 4;
@@ -14,22 +27,23 @@ function riffleShuffle(deck) {
     deck.splice(rightCount, 0, ...leftHalf);
 }
 
-module.exports = {
-    DeckContants: {
-        suites: ['♠️', '♥️', '♣️', '♦️'],
-        cardValues: ['A', '2', '3', '4', '5', '6', '7', '8', '9', '10', 'J', 'Q', 'K']
-    },
+function createCardSetForPlayer(playerId, playerStates, communityCards) {
+    let playerHand = playerStates[playerId].hand;
+    let rawCardSet = [].concat.apply(playerHand, communityCards) // cards are numbers
+    let cardSetWithProps = []
+    for (let card of rawCardSet) {
+        cardSetWithProps.push({
+            rank: getCardRank(card),
+            suit: getCardSuit(card)
+        })
+    }
+    return cardSetWithProps;
+}
 
+module.exports = {
     BurnFactor: [1, 0, 0, 1, 1],
 
     HandStages: ['Pre Flop', 'Flop', 'Turn', 'River'],
-
-    HandRanks: {
-        'RoyalFlush': 1, 'StraightFlush': 2, 'FourOfAKind': 3,
-        'FullHouse': 4, 'Flush': 5, 'Straight': 6,
-        'ThreeOfAKind': 7, 'TwoPair': 8, 'Pair': 9,
-        'HighCard': 10
-    },
 
     newShuffledDeck: function (shuffleTimes) {
         let deck = Array.from(new Array(52), (x, i) => i);
@@ -39,15 +53,27 @@ module.exports = {
     },
 
     toHumarReadableCard: function (cardIndex) {
-        return this.DeckContants.suites[parseInt(cardIndex / 13)] + ' ' + this.DeckContants.cardValues[parseInt(cardIndex % 13)];
+        return getCardSuit(cardIndex) + ' ' + getCardRank(cardIndex);
     },
 
     toPlayerIndex: function (index, playerCount) {
         return parseInt(index % playerCount);
     },
 
-    determineWinningHand: function (playersInHand, playerStates) {
-        return 'some1sId';
+    scorePlayerHands: function (playersInHand, playerStates, communityCards) {
+        var scores = {}
+        if (playersInHand.length < 2) {
+            scores[playersInHand[0]] = {
+                value: 1000
+            }
+        } else {
+            for (player of playersInHand) {
+                let cardSet = createCardSetForPlayer(player, playerStates, communityCards);
+                scores[player] = PokerScore.score(cardSet);
+            }
+        }
+
+        return scores;
     },
 
     isPlayerEligibleForNextHand: function (player) {

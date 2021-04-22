@@ -1,6 +1,7 @@
 const Events = require('events');
 const PokerTable = require('./pokerTable');
 const PokerHelper = require('./pokerHelper');
+const e = require('express');
 const logger = require('./loggerFactory').getLogger();
 
 function PokerDealer(cfg) {
@@ -23,6 +24,14 @@ PokerDealer.prototype.doNext = function () {
 
 PokerDealer.prototype.notifyPlayerForAction = function (playerOnAction) {
     logger.log('verbose', 'Action On: [ %s ]', this.table.activePlayersInOrder[playerOnAction])
+}
+
+PokerDealer.prototype.notifyError = function (message) {
+    logger.log('error', '[ %s ]', message)
+}
+
+PokerDealer.prototype.notifyChipsCounts = function (message) {
+    logger.log('verbose', 'Summary: [ %s ] Wins/Loses [ %s ] chips', message.playerId, message.delta)
 }
 
 PokerDealer.prototype.displayTable = function (stage) {
@@ -56,7 +65,9 @@ PokerDealer.prototype.displayTable = function (stage) {
 }
 
 PokerDealer.prototype.onAction = function (actionCfg) {
-    this.table.currentHand.act(actionCfg);
+    if (this.table.currentHand.validateAction(actionCfg)) {
+        this.table.currentHand.act(actionCfg);
+    }
 }
 
 PokerDealer.prototype.registerEventHandlers = function () {
@@ -64,6 +75,8 @@ PokerDealer.prototype.registerEventHandlers = function () {
     // https://stackoverflow.com/a/43727582
     this.eventHandler.on('HAND_OVER', ev => this.doNext(ev));
     this.eventHandler.on('ACTION_ON', ev => this.notifyPlayerForAction(ev));
+    this.eventHandler.on('INVALID_ACTION', ev => this.notifyError(ev));
+    this.eventHandler.on('CHIP_COUNT_CHANGED', ev => this.notifyChipsCounts(ev));
     this.eventHandler.on(PokerHelper.HandStages[0], ev => this.displayTable(ev));
     this.eventHandler.on(PokerHelper.HandStages[1], ev => this.displayTable(ev));
     this.eventHandler.on(PokerHelper.HandStages[2], ev => this.displayTable(ev));
