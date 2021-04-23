@@ -43,7 +43,6 @@ var localTable;
 function processCommand(payload) {
     if (!payload.cmd) return;
 
-    let response;
     switch (payload.cmd) {
         case 'createtable':
             localTable = PokerDealer.initTableAndCallDealer(payload.params);
@@ -64,25 +63,37 @@ function processCommand(payload) {
         case 'quit':
             rl.close();
         default:
-            response = 'undefined command';
             break;
     }
 }
 
 var commands = [
-    '!createtable -maxPlayers=6 -sb=25 -bb=50',
+    '!createtable -maxPlayers=6 -sb=5 -bb=10',
     '!join -id=player1',
     '!join -id=player2',
     '!join -id=player3',
-    '!join -id=player4',
-    '!join -id=player5',
+    // '!join -id=player4',
+    // '!join -id=player5',
     '!buy -playerId=player1 -chips=50',
     '!buy -playerId=player2 -chips=100',
     '!buy -playerId=player3 -chips=150',
-    '!buy -playerId=player4 -chips=1000',
-    '!buy -playerId=player5 -chips=2000',
-    '!start'
+    // '!buy -playerId=player4 -chips=1000',
+    // '!buy -playerId=player5 -chips=2000',
+    '!start',
+    '!act -playerId=player1 -action=BET -value=50',
+    '!act -playerId=player2 -action=FOLD',
+    '!act -playerId=player3 -action=FOLD'
 ]
+
+var execPreCommands = function () {
+    for (command of commands) {
+        processCommand({
+            cmd: extract(command, commandMatcher)[0],
+            params: toKeyValuePairs(extract(command, paramMatcher)),
+            raw: command
+        });
+    }
+};
 
 var play = function () {
     rl.question(" > ", function (input) {
@@ -97,13 +108,15 @@ var play = function () {
 
 module.exports = {
     playInAdminMode: function () {
-        for (command of commands) {
-            processCommand({
-                cmd: extract(command, commandMatcher)[0],
-                params: toKeyValuePairs(extract(command, paramMatcher)),
-                raw: command
-            });
-        }
+        execPreCommands();
         play();
-    }
+    },
+    executeInAdminMode: function (command) {
+        processCommand({
+            cmd: extract(command, commandMatcher)[0],
+            params: toKeyValuePairs(extract(command, paramMatcher)),
+            raw: command
+        });
+    },
+    executePreCommands: execPreCommands
 }

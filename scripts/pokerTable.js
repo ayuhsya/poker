@@ -37,6 +37,14 @@ PokerTable.prototype.buyChips = function (buyCfg) {
     logger.log('debug', '[ %s ] bought [ %s ] chips', buyCfg.playerId, buyCfg.chips);
 }
 
+PokerTable.prototype.eliminatePlayerLowerPotShares = function (playerPotShare, allPotSharesByPlayer) {
+    for (playerId in allPotSharesByPlayer) {
+        if (allPotSharesByPlayer.hasOwnProperty(playerId) && allPotSharesByPlayer[playerId].share < playerPotShare) {
+            this.players[playerId].isEliminated = true;
+        }
+    }
+}
+
 PokerTable.prototype.dealNextHand = function () {
     this.totalHandsDealt++;
     // Deal hands
@@ -99,14 +107,19 @@ PokerTable.prototype.performHouseKeeping = function () {
                 } else {
                     // directly deduct chips in pot from players not in final hand
                     this.players[playerId].chips -= playerStatesAfterHand[playerId].chipsInPot;
+                    logger.log('verbose', '[ %s ] lost [ %s ] chips [ folded ]', playerId, playerStatesAfterHand[playerId].chipsInPot)
                 }
             }
         }
 
+        logger.log('debug', 'Final pot config [ %s ]', JSON.stringify(this.currentHand.potConfig));
+
         // Re-Distribute chips post hand among players in final hand.
         if (playersInFinalRound.length < 2) {
             // No showdown case
-            this.players[playersInFinalRound[0]].chips += (this.currentHand.totalPotValue - this.currentHand.playerStates[playersInFinalRound[0]].chipsInPot);
+            let chipsWon = this.currentHand.potConfig.totalPotValue - this.currentHand.playerStates[playersInFinalRound[0]].chipsInPot;
+            this.players[playersInFinalRound[0]].chips += chipsWon;
+            logger.log('verbose', '[ %s ] won full pot [ %s ] [ no showdown ]', playersInFinalRound[0], chipsWon)
         } else {
             // Showdown
             let playerHandScores = PokerHelper.scorePlayerHands(playersInFinalRound, playerStatesAfterHand, this.currentHand.communityCards);
@@ -118,8 +131,9 @@ PokerTable.prototype.performHouseKeeping = function () {
             if (this.currentHand.potConfig.potShares.size === 0) {
                 // Distribution in case of no side pots, winner takes all
                 let winningPlayer = playersByRank[0];
-                this.players[winningPlayer].chips += (this.currentHand.totalPotValue - this.currentHand.playerStates[winningPlayer].chipsInPot);
-                logger.log('debug', '[ %s ] won full pot [ %s ]', winningPlayer, this.currentHand.totalPotValue)
+                let chipsWon = (this.currentHand.potConfig.totalPotValue - this.currentHand.playerStates[winningPlayer].chipsInPot);
+                this.players[winningPlayer].chips += chipsWon;
+                logger.log('verbose', '[ %s ] won full pot [ %s ] with [ %s ] #0', winningPlayer, chipsWon, playerHandScores[winningPlayer].name)
                 this.eventHandler.emit('CHIP_COUNT_CHANGED', {
                     delta: this.currentHand.totalPotValue,
                     playerId: winningPlayer
@@ -129,26 +143,46 @@ PokerTable.prototype.performHouseKeeping = function () {
                 let totalRemainingPotValue = this.currentHand.potConfig.totalPotValue;
                 let previousPlayerShare = 0; // if multi pot wins
                 for (player of playersByRank) {
-                    if (this.currentHand.potConfig.potShares.hasOwnProperty(player)) {
-                        // case when winning player was all in
+                    if (this.players[player].isEliminated) {
+                        // case when runner up pot share is lower than winner pot share, pot is acquired by winner and player is eliminated
+                        this.players[player].chips -= this.currentHand.playerStates[player].chipsInPot;
+                        logger.log('verbose', '[ %s ] lost [ %s ] chips #1 [ player eliminated since pot acquired ] ', player, this.currentHand.playerStates[player].chipsInPot)
+                        this.eventHandler.emit('CHIP_COUNT_CHANGED', {
+                            delta: -1 * this.currentHand.playerStates[player].chipsInPot,
+                            playerId: player
+                        });
+                    } else if (totalRemainingPotValue > 0 && this.currentHand.potConfig.potShares.hasOwnProperty(player)) {
+                        // case when winning player was all in and there are still chips to be claimed in the pot
                         let playerPotShare = this.currentHand.potConfig.potShares[player];
 
                         // player wins his share of pot (playerWinnings.share = all in chip amount of this player, playerWinnings.totalPlayersInThisShare = total players in that round)
+                        // subtract amount of chips taken if another player with small pot ranked above current player
                         let playerWinnings = (playerPotShare.share - previousPlayerShare) * (playerPotShare.totalPlayersInThisShare - 1);
+                        this.eliminatePlayerLowerPotShares(playerPotShare.share, this.currentHand.potConfig.potShares);
                         this.players[player].chips += playerWinnings;
                         previousPlayerShare += playerPotShare.share;
-                        totalRemainingPotValue -= (playerWinnings + (playerPotShare.share - previousPlayerShare));
+                        totalRemainingPotValue -= (playerWinnings + this.currentHand.playerStates[player].chipsInPot);
 
-                        logger.log('debug', '[ %s ] won pot of size [ %s ]', player, playerWinnings)
+                        logger.log('verbose', '[ %s ] won pot of size [ %s ] with [ %s ] [ wins own share ]', player, playerWinnings, playerHandScores[player].name)
                         this.eventHandler.emit('CHIP_COUNT_CHANGED', {
                             delta: playerWinnings,
                             playerId: player
                         });
-                    } else if (totalRemainingPotValue > 0) {
-                        // case when winning player was not all in
-                        let playerWinnings = totalRemainingPotValue / countOfPlayersInFinalRoundNotAllIn * (countOfPlayersInFinalRoundNotAllIn - 1);
+                    } else if (totalRemainingPotValue > 0 && previousPlayerShare === 0) {
+                        // case when winning player was not all in, takes full pot
+                        let playerWinnings = totalRemainingPotValue - this.currentHand.playerStates[player].chipsInPot;
                         this.players[player].chips += playerWinnings;
-                        logger.log('debug', '[ %s ] won pot of size [ %s ]', player, playerWinnings);
+                        logger.log('verbose', '[ %s ] won full pot of size [ %s ] with [ %s ] [ winner not all in ]', player, playerWinnings, playerHandScores[player].name);
+                        this.eventHandler.emit('CHIP_COUNT_CHANGED', {
+                            delta: totalRemainingPotValue,
+                            playerId: player
+                        });
+                        totalRemainingPotValue = 0;
+                    } else if (totalRemainingPotValue > 0) {
+                        // case when runner up player was not all in, takes back his share of pot and loses acquired pot shares
+                        let playerLoses = this.currentHand.playerStates[player].chipsInPot - totalRemainingPotValue;
+                        this.players[player].chips -= playerLoses;
+                        logger.log('verbose', '[ %s ] lost pot of size [ %s ] with [ %s ] [ loses acquired chips, takes back remaining pot ]', player, playerLoses, playerHandScores[player].name);
                         this.eventHandler.emit('CHIP_COUNT_CHANGED', {
                             delta: totalRemainingPotValue,
                             playerId: player
@@ -156,7 +190,7 @@ PokerTable.prototype.performHouseKeeping = function () {
                         totalRemainingPotValue = 0;
                     } else {
                         this.players[player].chips -= this.currentHand.playerStates[player].chipsInPot;
-                        logger.log('debug', '[ %s ] lost [ %s ] chips', player, this.currentHand.playerStates[player].chipsInPot)
+                        logger.log('verbose', '[ %s ] lost [ %s ] chips #5', player, this.currentHand.playerStates[player].chipsInPot)
                         this.eventHandler.emit('CHIP_COUNT_CHANGED', {
                             delta: -1 * this.currentHand.playerStates[player].chipsInPot,
                             playerId: player
@@ -175,11 +209,11 @@ PokerTable.prototype.performHouseKeeping = function () {
             this.activePlayersInOrder.push(playerId);
         }
     }
+    logger.log('debug', 'Performed house keeping, table state [ %s ]', JSON.stringify(this))
     if (this.activePlayersInOrder < 2) {
         this.eventHandler.emit('GAME_STOPPED')
         return false;
     }
-    logger.log('debug', 'Performed house keeping, table state [ %s ]', JSON.stringify(this.table))
     return true;
 }
 

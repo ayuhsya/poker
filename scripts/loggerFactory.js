@@ -2,7 +2,7 @@ const winston = require('winston');
 
 module.exports = {
     getLogger: function (module) {
-        var loggerLevel = process.env.logger_level;
+        var loggerLevel = process.env.LOGGER_LEVEL;
         return winston.createLogger({
             level: loggerLevel,
             format: winston.format.json(),
@@ -21,6 +21,15 @@ module.exports = {
                         winston.format.simple()
                     )
                 })
+                // new winston.transports.File({
+                //     filename: 'poker.log',
+                //     level: loggerLevel,
+                //     format: winston.format.combine(
+                //         winston.format.colorize(),
+                //         winston.format.splat(),
+                //         winston.format.simple()
+                //     )
+                // })
             ],
         });
     }

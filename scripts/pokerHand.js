@@ -16,19 +16,22 @@ function PokerHand(handCfg, eventHandler) {
 
 PokerHand.prototype.resetAndStartNextRound = function () {
     ++this.stage;
-    this.actionOn = (this.stage === 0) ? PokerHelper.toPlayerIndex(this.firstToAct + 2, this.totalPlayersInHand.length) : this.firstToAct;
+    this.actionOn = (this.stage === 0) ? PokerHelper.toPlayerIndex(this.firstToAct + 1, this.totalPlayersInHand.length) : this.firstToAct - 1;
     this.playerActionsRegistered = (this.stage === 0) ? 2 : 0; // sb + bb = 2 actions
-    if (!this.playerStates[this.totalPlayersInHand[this.actionOn]].eligibleForNextRound || this.playerStates[this.totalPlayersInHand[this.actionOn]].hasQuitHand) {
-        this.playerActionsRegistered++;
-        this.determineNextState();
-        return;
-    }
     this.eventHandler.emit(PokerHelper.HandStages[this.stage], this.stage);
+    this.determineNextState();
 }
 
 PokerHand.prototype.notifyForNextAction = function () {
     this.actionOn = PokerHelper.toPlayerIndex(this.actionOn + 1, this.totalPlayersInHand.length);
-    this.eventHandler.emit('ACTION_ON', this.actionOn)
+    if (!this.playerStates[this.totalPlayersInHand[this.actionOn]].eligibleForNextRound || this.playerStates[this.totalPlayersInHand[this.actionOn]].hasQuitHand) {
+        this.act({
+            playerId: this.totalPlayersInHand[this.actionOn],
+            action: 'CHECK'
+        });
+    } else {
+        this.eventHandler.emit('ACTION_ON', this.actionOn)
+    }
 }
 
 PokerHand.prototype.logActionHistory = function (actionCfg) {
@@ -77,6 +80,7 @@ PokerHand.prototype.reconfigurePot = function (actingPlayerId, value) {
         }
         // todo notify all in event
     }
+    logger.log('debug', 'Pot has been reconfigured [ %s ]', JSON.stringify(this.potConfig));
 }
 
 PokerHand.prototype.determineNextState = function () {

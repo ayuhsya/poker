@@ -37,7 +37,7 @@ PokerDealer.prototype.notifyGameStopped = function (message) {
 }
 
 PokerDealer.prototype.notifyChipsCounts = function (message) {
-    logger.log('verbose', 'Summary: [ %s ] Wins/Loses [ %s ] chips', message.playerId, message.delta)
+    logger.log('silly', 'Summary: [ %s ] Wins/Loses [ %s ] chips', message.playerId, message.delta)
 }
 
 PokerDealer.prototype.displayTable = function (stage) {
@@ -69,7 +69,6 @@ PokerDealer.prototype.displayTable = function (stage) {
                 PokerHelper.toHumarReadableCard(player.hand[1]), player.chipsInPot, player.chips)
         }
     }
-    this.notifyPlayerForAction(this.table.currentHand.actionOn);
 }
 
 PokerDealer.prototype.onAction = function (actionCfg) {
