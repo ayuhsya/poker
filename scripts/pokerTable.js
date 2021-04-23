@@ -34,6 +34,7 @@ PokerTable.prototype.joinTable = function (player) {
 
 PokerTable.prototype.buyChips = function (buyCfg) {
     this.players[buyCfg.playerId].chips = this.players[buyCfg.playerId].chips + parseFloat(buyCfg.chips);
+    this.players[buyCfg.playerId].isEliminated = false;
     logger.log('debug', '[ %s ] bought [ %s ] chips', buyCfg.playerId, buyCfg.chips);
 }
 
@@ -180,11 +181,11 @@ PokerTable.prototype.performHouseKeeping = function () {
                         totalRemainingPotValue = 0;
                     } else if (totalRemainingPotValue > 0) {
                         // case when runner up player was not all in, takes back his share of pot and loses acquired pot shares
-                        let playerLoses = this.currentHand.playerStates[player].chipsInPot - totalRemainingPotValue;
-                        this.players[player].chips -= playerLoses;
-                        logger.log('verbose', '[ %s ] lost pot of size [ %s ] with [ %s ] [ loses acquired chips, takes back remaining pot ]', player, playerLoses, playerHandScores[player].name);
+                        let playerLosses = this.currentHand.playerStates[player].chipsInPot - totalRemainingPotValue;
+                        this.players[player].chips -= playerLosses;
+                        logger.log('verbose', '[ %s ] lost pot of size [ %s ] with [ %s ] [ loses acquired chips, takes back remaining pot ]', player, playerLosses, playerHandScores[player].name);
                         this.eventHandler.emit('CHIP_COUNT_CHANGED', {
-                            delta: totalRemainingPotValue,
+                            delta: -playerLosses,
                             playerId: player
                         });
                         totalRemainingPotValue = 0;

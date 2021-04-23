@@ -63,7 +63,7 @@ PokerDealer.prototype.displayTable = function (stage) {
             break;
     }
     for (let key in this.table.currentHand.playerStates) {
-        if (this.table.currentHand.playerStates.hasOwnProperty(key)) {
+        if (this.table.currentHand.playerStates.hasOwnProperty(key) && !this.table.currentHand.playerStates[key].hasQuitHand) {
             var player = this.table.currentHand.playerStates[key];
             logger.log('verbose', '[ %s ], Hand [ %s %s ], Chips In Pot [%s], Total Chips [ %s ]', key, PokerHelper.toHumarReadableCard(player.hand[0]),
                 PokerHelper.toHumarReadableCard(player.hand[1]), player.chipsInPot, player.chips)
