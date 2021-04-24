@@ -20,16 +20,16 @@ module.exports = {
                         winston.format.splat(),
                         winston.format.simple()
                     )
+                }),
+                new winston.transports.File({
+                    filename: 'poker-debug.log',
+                    level: 'debug',
+                    format: winston.format.combine(
+                        winston.format.colorize(),
+                        winston.format.splat(),
+                        winston.format.simple()
+                    )
                 })
-                // new winston.transports.File({
-                //     filename: 'poker.log',
-                //     level: loggerLevel,
-                //     format: winston.format.combine(
-                //         winston.format.colorize(),
-                //         winston.format.splat(),
-                //         winston.format.simple()
-                //     )
-                // })
             ],
         });
     }

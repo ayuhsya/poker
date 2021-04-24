@@ -45,11 +45,9 @@ module.exports = {
 
     HandStages: ['Pre Flop', 'Flop', 'Turn', 'River'],
 
-    newShuffledDeck: function (shuffleTimes) {
-        let deck = Array.from(new Array(52), (x, i) => i);
-        for (i = 0; i < shuffleTimes; i++)
+    newShuffledDeck: function (deck) {
+        for (i = 0; i < 11; i++)
             riffleShuffle(deck);
-        return deck;
     },
 
     toHumarReadableCard: function (cardIndex) {
