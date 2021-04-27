@@ -45,10 +45,14 @@ PokerTable.prototype.buyChips = function (buyCfg) {
 
 PokerTable.prototype.eliminatePlayerLowerPotShares = function (playerPotShare, allPotSharesByPlayer) {
     for (playerId in allPotSharesByPlayer) {
-        if (allPotSharesByPlayer.hasOwnProperty(playerId) && allPotSharesByPlayer[playerId].share < playerPotShare) {
+        if (allPotSharesByPlayer.hasOwnProperty(playerId) && allPotSharesByPlayer[playerId].share < playerPotShare && !allPotSharesByPlayer[playerId].isAlreadyAcquired) {
             this.players[playerId].isEliminated = true;
         }
     }
+}
+
+PokerTable.prototype.shuffleDeck = function () {
+    PokerHelper.newShuffledDeck(this.deck);
 }
 
 PokerTable.prototype.dealNextHand = function () {
@@ -57,7 +61,6 @@ PokerTable.prototype.dealNextHand = function () {
     var cardIndex = 0,
         totalPlayersInHand = this.activePlayersInOrder.length;
     let firstToAct = PokerHelper.toPlayerIndex(this.playerOnButtonIdx++ + 1, totalPlayersInHand);
-    PokerHelper.newShuffledDeck(this.deck);
     var playerDetails = {}
     for (let idx = 0; idx < totalPlayersInHand * 2; idx++) {
         var card = this.deck[cardIndex++];
@@ -88,7 +91,7 @@ PokerTable.prototype.dealNextHand = function () {
     this.currentHand = PokerHand.createPokerHand({
         playerInitialStates: playerDetails,
         communityCards: communityCards,
-        potConfig: { totalPotValue: this.sb + this.bb, potShares: {} },
+        potConfig: { totalPotValue: this.sb + this.bb, potShares: [] },
         actionOn: firstToAct,
         totalPlayersInHand: this.activePlayersInOrder
     }, this.eventHandler);
@@ -101,91 +104,80 @@ PokerTable.prototype.dealNextHand = function () {
 PokerTable.prototype.performHouseKeeping = function () {
     if (this.currentHand) {
         let playerStatesAfterHand = this.currentHand.playerStates,
-            playersInFinalRound = this.currentHand.totalPlayersInHand;
+            playersInFinalRound = [], playersLosingAllChipsInPot = [];
 
-        logger.log('debug', 'Final pot config [ %s ]', JSON.stringify(this.currentHand.potConfig));
-
-        // Re-Distribute chips post hand among players in final hand.
-        let playerHandScores = PokerHelper.scorePlayerHands(playersInFinalRound, playerStatesAfterHand, this.currentHand.communityCards);
-        logger.log('debug', 'Scoring results [ %s ]', JSON.stringify(playerHandScores))
-        var playersByRank = [...playersInFinalRound].sort((a, b) => {
-            return playerHandScores[a].value > playerHandScores[b].value ? -1 : playerHandScores[a].value < playerHandScores[b].value ? 1 : 0;
-        })
-
-        let totalRemainingPotValue = this.currentHand.potConfig.totalPotValue,
-            previousPlayerShare = 0, // if multi pot wins
-            playersWithFoldedHands = [];
-        for (player of playersByRank) {
-            if (this.currentHand.playerStates[player].hasQuitHand) {
-                // configure after distributing among winners
-                playersWithFoldedHands.push(player);
-            } else if (this.players[player].isEliminated) {
-                // case when runner up pot share is lower than winner pot share, pot is acquired by winner and player is eliminated
-                this.players[player].chips -= this.currentHand.playerStates[player].chipsInPot;
-                logger.log('verbose', '[ %s ] lost [ %s ] chips [ player eliminated since pot acquired ] ', player, this.currentHand.playerStates[player].chipsInPot)
-                this.eventHandler.emit('CHIP_COUNT_CHANGED', {
-                    delta: -1 * this.currentHand.playerStates[player].chipsInPot,
-                    playerId: player
-                });
-            } else if (totalRemainingPotValue > 0 && this.currentHand.potConfig.potShares.hasOwnProperty(player)) {
-                // case when winning player was all in and there are still chips to be claimed in the pot
-                let playerPotShare = this.currentHand.potConfig.potShares[player];
-
-                // player wins his share of pot (playerWinnings.share = all in chip amount of this player, playerWinnings.totalPlayersInThisShare = total players in that round)
-                // subtract amount of chips taken if another player with small pot ranked above current player
-                let playerWinnings = (playerPotShare.share - previousPlayerShare) * (playerPotShare.totalPlayersInThisShare - 1);
-                this.eliminatePlayerLowerPotShares(playerPotShare.share, this.currentHand.potConfig.potShares);
-                this.players[player].chips += playerWinnings;
-                previousPlayerShare += playerPotShare.share;
-                totalRemainingPotValue -= (playerWinnings + this.currentHand.playerStates[player].chipsInPot);
-
-                logger.log('verbose', '[ %s ] won pot of size [ %s ] with [ %s ] [ wins own share ]', player, playerWinnings, playerHandScores[player].name)
-                this.eventHandler.emit('CHIP_COUNT_CHANGED', {
-                    delta: playerWinnings,
-                    playerId: player
-                });
-            } else if (totalRemainingPotValue > 0 && previousPlayerShare === 0) {
-                // case when winning player was not all in, takes full pot
-                let playerWinnings = totalRemainingPotValue - this.currentHand.playerStates[player].chipsInPot;
-                this.players[player].chips += playerWinnings;
-                // eliminate all all in players
-                this.eliminatePlayerLowerPotShares(playerWinnings, this.currentHand.potConfig.potShares);
-                logger.log('verbose', '[ %s ] won full pot of size [ %s ] with [ %s ] [ winner not all in ]', player, playerWinnings, playerHandScores[player].name);
-                this.eventHandler.emit('CHIP_COUNT_CHANGED', {
-                    delta: totalRemainingPotValue,
-                    playerId: player
-                });
-                totalRemainingPotValue = 0;
-            } else if (totalRemainingPotValue > 0) {
-                // case when runner up player was not all in, takes back his share of pot and loses acquired pot shares
-                let playerLosses = this.currentHand.playerStates[player].chipsInPot - totalRemainingPotValue;
-                this.players[player].chips -= playerLosses;
-                logger.log('verbose', '[ %s ] lost pot of size [ %s ] with [ %s ] [ loses acquired chips, takes back remaining pot ]', player, playerLosses, playerHandScores[player].name);
-                this.eventHandler.emit('CHIP_COUNT_CHANGED', {
-                    delta: -playerLosses,
-                    playerId: player
-                });
-                totalRemainingPotValue = 0;
+        for (key in this.currentHand.playerStates) {
+            if (this.currentHand.playerStates.hasOwnProperty(key) && !this.currentHand.playerStates[key].hasQuitHand) {
+                playersInFinalRound.push(key);
             } else {
-                this.players[player].chips -= this.currentHand.playerStates[player].chipsInPot;
-                logger.log('verbose', '[ %s ] lost [ %s ] chips #5', player, this.currentHand.playerStates[player].chipsInPot)
-                this.eventHandler.emit('CHIP_COUNT_CHANGED', {
-                    delta: -1 * this.currentHand.playerStates[player].chipsInPot,
-                    playerId: player
-                });
+                // players who folded don't get anything back from the pot, assuming all players play optimally
+                playersLosingAllChipsInPot.push(key);
             }
         }
 
-        for (player of playersWithFoldedHands) {
-            // case when runner up player was not all in, takes back his share of pot and loses acquired pot shares
-            let playerLosses = this.currentHand.playerStates[player].chipsInPot - totalRemainingPotValue;
+        if (playersInFinalRound.length < 2) {
+            let winner = playersInFinalRound[0];
+
+            // case when no split pots, winner takes all
+            let playerWinnings = totalRemainingPotValue - this.currentHand.playerStates[winner].chipsInPot;
+            this.players[winner].chips += playerWinnings;
+            logger.log('verbose', '[ %s ] won full pot of size [ %s ] with [ %s ] [ winner not all in ]', winner, playerWinnings, playerHandScores[winner].name);
+            this.eventHandler.emit('CHIP_COUNT_CHANGED', {
+                delta: this.players[winner].chips,
+                playerId: winner
+            });
+        } else {
+            // Re-Distribute chips post hand among players in final hand.
+            let playerHandScores = PokerHelper.scorePlayerHands(playersInFinalRound, playerStatesAfterHand, this.currentHand.communityCards);
+            logger.log('debug', 'Scoring results [ %s ]', JSON.stringify(playerHandScores))
+            var playersByRank = [...playersInFinalRound].sort((a, b) => {
+                return playerHandScores[a].value > playerHandScores[b].value ? -1 : playerHandScores[a].value < playerHandScores[b].value ? 1 : 0;
+            });
+
+            let playersInFinalRoundByBets = [...this.currentHand.totalPlayersInHand].sort((a, b) => {
+                return playerStatesAfterHand[a].chipsInPot > playerStatesAfterHand[b].chipsInPot ? 1 : playerStatesAfterHand[a].chipsInPot < playerStatesAfterHand[b].chipsInPot ? -1 : 0;
+            });
+
+            logger.log('debug', 'players in final round in order of bet [ %s ]', JSON.stringify(playersInFinalRoundByBets));
+
+            let deltaChipCountByPlayer = {},
+                lastPotSplitPoint = 0;
+            for (let index = 0; index < playersInFinalRoundByBets.length; index++) {
+                if (playerStatesAfterHand[playersInFinalRoundByBets[index]].chipsInPot > lastPotSplitPoint) {
+                    let potSplitPoint = playerStatesAfterHand[playersInFinalRoundByBets[index]].chipsInPot;
+                    let filteredContenders = playersInFinalRoundByBets.slice(index);
+                    logger.log('debug', '[ %s ] at pot split point [ %s ]', JSON.stringify(filteredContenders), potSplitPoint);
+                    for (let player of playersByRank) {
+                        if (filteredContenders.includes(player)) {
+                            if (!deltaChipCountByPlayer.hasOwnProperty(player)) {
+                                deltaChipCountByPlayer[player] = 0;
+                            }
+                            deltaChipCountByPlayer[player] += (potSplitPoint - lastPotSplitPoint) * filteredContenders.length;
+                            logger.log('debug', '[ %s ] wins this pot split', player);
+                            break;
+                        }
+                    }
+                    lastPotSplitPoint = potSplitPoint;
+                }
+            }
+
+            logger.log('debug', 'players delta chip count [ %s ]', JSON.stringify(deltaChipCountByPlayer));
+
+            for (key in deltaChipCountByPlayer) {
+                if (deltaChipCountByPlayer.hasOwnProperty(key)) {
+                    this.players[key].chips += (deltaChipCountByPlayer[key] - playerStatesAfterHand[key].chipsInPot);
+                }
+            }
+        }
+
+        for (player of playersLosingAllChipsInPot) {
+            let playerLosses = playerStatesAfterHand[player].chipsInPot;
             this.players[player].chips -= playerLosses;
-            logger.log('verbose', '[ %s ] lost pot of size [ %s ] with [ %s ] [ loses acquired chips, takes back remaining pot ]', player, playerLosses, playerHandScores[player].name);
+            logger.log('verbose', '[ %s ] lost pot of size [ %s ] [ folded / worse hand ]', player, playerLosses);
             this.eventHandler.emit('CHIP_COUNT_CHANGED', {
                 delta: -playerLosses,
                 playerId: player
             });
-            totalRemainingPotValue = 0;
         }
 
         logger.log('verbose', 'Finished hand [ #%s ]', this.totalHandsDealt);
@@ -210,5 +202,6 @@ PokerTable.prototype.performHouseKeeping = function () {
 module.exports = {
     createTable: function (tableCfg, eventHandler) {
         return new PokerTable(tableCfg, eventHandler);
-    }
+    },
+    pokerTable: PokerTable
 }
