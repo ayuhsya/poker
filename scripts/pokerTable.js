@@ -76,7 +76,7 @@ PokerTable.prototype.dealNextHand = function () {
     // Deal community cards
     var communityCards = []
     for (burns of PokerHelper.BurnFactor) {
-        cardIndex = burns + ++cardIndex;
+        cardIndex += burns + 1;
         communityCards.push(this.deck[cardIndex])
     }
     // Populate chips
@@ -91,7 +91,7 @@ PokerTable.prototype.dealNextHand = function () {
     this.currentHand = PokerHand.createPokerHand({
         playerInitialStates: playerDetails,
         communityCards: communityCards,
-        potConfig: { totalPotValue: this.sb + this.bb, potShares: [] },
+        totalChipsInPot: this.sb + this.bb,
         actionOn: firstToAct,
         totalPlayersInHand: this.activePlayersInOrder
     }, this.eventHandler);
@@ -107,6 +107,7 @@ PokerTable.prototype.performHouseKeeping = function () {
             playersInFinalRound = [], playersLosingAllChipsInPot = [];
 
         for (key in this.currentHand.playerStates) {
+            this.players[key].chips -= playerStatesAfterHand[key].chipsInPot;
             if (this.currentHand.playerStates.hasOwnProperty(key) && !this.currentHand.playerStates[key].hasQuitHand) {
                 playersInFinalRound.push(key);
             } else {
@@ -119,7 +120,7 @@ PokerTable.prototype.performHouseKeeping = function () {
             let winner = playersInFinalRound[0];
 
             // case when no split pots, winner takes all
-            let playerWinnings = totalRemainingPotValue - this.currentHand.playerStates[winner].chipsInPot;
+            let playerWinnings = totalRemainingPotValue;
             this.players[winner].chips += playerWinnings;
             logger.log('verbose', '[ %s ] won full pot of size [ %s ] with [ %s ] [ winner not all in ]', winner, playerWinnings, playerHandScores[winner].name);
             this.eventHandler.emit('CHIP_COUNT_CHANGED', {
@@ -152,8 +153,9 @@ PokerTable.prototype.performHouseKeeping = function () {
                             if (!deltaChipCountByPlayer.hasOwnProperty(player)) {
                                 deltaChipCountByPlayer[player] = 0;
                             }
-                            deltaChipCountByPlayer[player] += (potSplitPoint - lastPotSplitPoint) * filteredContenders.length;
-                            logger.log('debug', '[ %s ] wins this pot split', player);
+                            let potShare = (potSplitPoint - lastPotSplitPoint) * filteredContenders.length;
+                            deltaChipCountByPlayer[player] += potShare;
+                            logger.log('verbose', '[ %s ] wins [ %s ] [ best hand in share ]', player, potShare);
                             break;
                         }
                     }
@@ -165,19 +167,9 @@ PokerTable.prototype.performHouseKeeping = function () {
 
             for (key in deltaChipCountByPlayer) {
                 if (deltaChipCountByPlayer.hasOwnProperty(key)) {
-                    this.players[key].chips += (deltaChipCountByPlayer[key] - playerStatesAfterHand[key].chipsInPot);
+                    this.players[key].chips += deltaChipCountByPlayer[key];
                 }
             }
-        }
-
-        for (player of playersLosingAllChipsInPot) {
-            let playerLosses = playerStatesAfterHand[player].chipsInPot;
-            this.players[player].chips -= playerLosses;
-            logger.log('verbose', '[ %s ] lost pot of size [ %s ] [ folded / worse hand ]', player, playerLosses);
-            this.eventHandler.emit('CHIP_COUNT_CHANGED', {
-                delta: -playerLosses,
-                playerId: player
-            });
         }
 
         logger.log('verbose', 'Finished hand [ #%s ]', this.totalHandsDealt);
@@ -188,6 +180,8 @@ PokerTable.prototype.performHouseKeeping = function () {
     for (var playerId of this.playersInOrder) {
         if (this.players[playerId].chips >= this.bb && this.players[playerId].isActive) {
             this.activePlayersInOrder.push(playerId);
+        } else if (this.players[playerId].chips < this.bb) {
+            this.players[playerId].isEliminated = true;
         }
     }
     logger.log('debug', 'Performed house keeping, table state [ %s ]', JSON.stringify(this))

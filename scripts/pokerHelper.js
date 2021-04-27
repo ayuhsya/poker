@@ -41,7 +41,7 @@ function createCardSetForPlayer(playerId, playerStates, communityCards) {
 }
 
 module.exports = {
-    BurnFactor: [1, 0, 0, 1, 1],
+    BurnFactor: [0, 0, 0, 1, 1],
 
     HandStages: ['Pre Flop', 'Flop', 'Turn', 'River'],
 

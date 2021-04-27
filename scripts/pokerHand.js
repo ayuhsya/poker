@@ -5,7 +5,7 @@ const logger = require('./loggerFactory').getLogger();
 function PokerHand(handCfg, eventHandler) {
     this.playerStates = handCfg.playerInitialStates;
     this.communityCards = handCfg.communityCards;
-    this.totalChipsInPot = 0;
+    this.totalChipsInPot = handCfg.totalChipsInPot;
     this.firstToAct = handCfg.actionOn;
     this.actionOn = undefined;
     this.totalPlayersInHand = handCfg.totalPlayersInHand;
